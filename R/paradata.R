@@ -64,17 +64,42 @@ read_many_para <- function(path = NULL, remove.passive = TRUE, parse = TRUE) {
 
     # IF SHALL BE PARSED
     if (parse & nrow(dt) > 0) {
+      ignore_events <- c(
+        "ClosedBySupervisor", "Deleted", "InterviewCreated", "InterviewModeChanged",
+        "InterviewerAssigned", "TranslationSwitched", "Completed", "KeyAssigned",
+        "OpenedBySupervisor", "Paused", "ReceivedByInterviewer", "ReceivedBySupervisor",
+        "Restarted", "Restored", "Resumed", "SupervisorAssigned"
+      )
+
       ## SPLIT PARAMETERS IN READABLE FORMAT
       # only for those which actually have parameters - should result in performance increase
+
+      # First cleanup SuSo Export issue if there is any three "|||" within
+      # the parameters string
       dt[
-        !.(c(
-          "ClosedBySupervisor", "Deleted", "InterviewCreated", "InterviewModeChanged",
-          "InterviewerAssigned", "TranslationSwitched", "Completed",
-          "OpenedBySupervisor", "Paused", "ReceivedByInterviewer", "ReceivedBySupervisor",
-          "Restarted", "Restored", "Resumed", "SupervisorAssigned"
-        )),
-        c("variable", "value_entered", "roster_variable") := tstrsplit(parameters, "\\|\\|")
+        grepl("\\|\\|\\|", parameters),
+        parameters := gsub("\\|\\|\\|", "\\|\\|", parameters)
       ]
+
+      # Check if any Roster
+      if (nrow(dt[!.(c(ignore_events))][!grepl("\\|\\|$", parameters)]) == 0) {
+        dt[
+          !.(c(ignore_events)),
+          `:=`(
+            c("variable", "value_entered"),
+            tstrsplit(parameters, "\\|\\|")
+          )
+        ]
+        dt[, "roster_variable" := NA_character_]
+      } else if (nrow(dt[!.(c(ignore_events))][!grepl("\\|\\|$", parameters)]) > 0) {
+        dt[
+          !.(c(ignore_events)),
+          `:=`(
+            c("variable", "value_entered", "roster_variable"),
+            tstrsplit(parameters, "\\|\\|")
+          )
+        ]
+      }
     }
 
     dt
@@ -147,20 +172,20 @@ analyze_para <- function(dt = NULL, answ.changes = TRUE, duration = TRUE) {
     ## Simply by vector of length for now
     ### FIRST CREATE HELP VARIABLE
     dt[event == "AnswerSet" &
-         nchar(value_entered) > nchar(shift(value_entered, type = "lead")) &
-         variable == shift(variable) &
-         roster_variable == shift(roster_variable) &
-         str_detect(value_entered, ",") == TRUE &
-         str_detect(value_entered, "\\|") == FALSE &
-         interview__id == shift(interview__id), help := "AnswerChanged"]
+      nchar(value_entered) > nchar(shift(value_entered, type = "lead")) &
+      variable == shift(variable) &
+      roster_variable == shift(roster_variable) &
+      str_detect(value_entered, ",") == TRUE &
+      str_detect(value_entered, "\\|") == FALSE &
+      interview__id == shift(interview__id), help := "AnswerChanged"]
 
     dt[!is.na(shift(help)) &
-         event == "AnswerSet" &
-         variable == shift(variable) &
-         roster_variable == shift(roster_variable) &
-         str_detect(value_entered, ",") == TRUE &
-         str_detect(value_entered, "\\|") == FALSE &
-         interview__id == shift(interview__id), event := "AnswerChanged"][, help := NULL]
+      event == "AnswerSet" &
+      variable == shift(variable) &
+      roster_variable == shift(roster_variable) &
+      str_detect(value_entered, ",") == TRUE &
+      str_detect(value_entered, "\\|") == FALSE &
+      interview__id == shift(interview__id), event := "AnswerChanged"][, help := NULL]
   }
 
 
@@ -202,6 +227,3 @@ analyze_para <- function(dt = NULL, answ.changes = TRUE, duration = TRUE) {
 
   return(dt)
 }
-
-
-
